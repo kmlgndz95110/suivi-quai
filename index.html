@@ -2,22 +2,46 @@
 <html lang="fr">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Suivi Réceptions & Navettes - Leroy Merlin</title>
-    <!-- Supabase JS CDN (Gratuit & Cloud) -->
-    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <meta name="theme-color" content="#00875A">
+    <link rel="manifest" href="manifest.webmanifest">
+    <link rel="icon" href="icon.svg" type="image/svg+xml">
+    <link rel="apple-touch-icon" href="icon-192.png">
     <style>
         :root {
             --primary: #00875A;
             --primary-dark: #006644;
             --bg-body: #f4f5f7;
             --card-bg: #ffffff;
+            --card-done: #fafafa;
             --text-main: #172b4d;
             --text-sub: #5e6c84;
             --status-waiting: #ffab00;
             --status-progress: #0052cc;
             --status-done: #36b37e;
+            --danger: #de350b;
             --border: #dfe1e6;
+            --chip-bg: #ebecf0;
+            --shadow: 0 1px 3px rgba(0,0,0,0.1);
+            color-scheme: light;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --primary: #1a9b6e;
+                --primary-dark: #0f7a54;
+                --bg-body: #12171f;
+                --card-bg: #1c232e;
+                --card-done: #171d27;
+                --text-main: #e6ebf2;
+                --text-sub: #9aa7ba;
+                --border: #2f3a4a;
+                --chip-bg: #2a3442;
+                --danger: #ff6b4a;
+                --shadow: 0 1px 3px rgba(0,0,0,0.5);
+                color-scheme: dark;
+            }
         }
 
         * {
@@ -30,13 +54,17 @@
         body {
             background-color: var(--bg-body);
             color: var(--text-main);
-            padding-bottom: 40px;
+            padding-bottom: 96px;
         }
+
+        button { font-size: inherit; color: inherit; }
+        :focus-visible { outline: 3px solid var(--status-progress); outline-offset: 2px; }
 
         header {
             background-color: var(--primary);
             color: white;
             padding: 15px 20px;
+            padding-top: calc(15px + env(safe-area-inset-top));
             position: sticky;
             top: 0;
             z-index: 100;
@@ -46,32 +74,35 @@
             align-items: center;
         }
 
-        header h1 {
-            font-size: 1.1rem;
-            font-weight: 700;
-        }
+        header h1 { font-size: 1.1rem; font-weight: 700; }
 
-        header .live-badge {
+        .sync-badge {
             background-color: #25d366;
             color: white;
             font-size: 0.75rem;
-            padding: 4px 8px;
+            padding: 4px 10px;
             border-radius: 12px;
             font-weight: bold;
             display: flex;
             align-items: center;
-            gap: 5px;
+            gap: 6px;
+            border: none;
+            cursor: default;
         }
 
-        header .live-badge::before {
+        .sync-badge::before {
             content: "";
             display: inline-block;
             width: 8px;
             height: 8px;
             background-color: white;
             border-radius: 50%;
-            animation: pulse 1.5s infinite;
         }
+
+        .sync-badge[data-state="live"]::before { animation: pulse 1.5s infinite; }
+        .sync-badge[data-state="local"] { background-color: rgba(255,255,255,0.22); }
+        .sync-badge[data-state="connecting"] { background-color: #5e6c84; }
+        .sync-badge[data-state="offline"] { background-color: #b25e00; }
 
         @keyframes pulse {
             0% { opacity: 1; }
@@ -85,15 +116,57 @@
             padding: 12px;
         }
 
-        /* Barre de progression globale */
-        .progress-card {
+        .card {
             background: var(--card-bg);
             padding: 15px;
             border-radius: 10px;
-            margin-bottom: 15px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            margin-bottom: 12px;
+            box-shadow: var(--shadow);
         }
 
+        /* Navigation par jour */
+        .day-nav {
+            display: grid;
+            grid-template-columns: 44px 1fr 44px;
+            gap: 8px;
+            align-items: center;
+            margin-bottom: 12px;
+        }
+
+        .day-nav button, .day-nav input {
+            height: 44px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+        }
+
+        .day-nav input {
+            width: 100%;
+            padding: 0 10px;
+            text-align: center;
+            font-size: 1rem;
+            color: var(--text-main);
+        }
+
+        .day-title {
+            text-align: center;
+            font-size: 0.8rem;
+            color: var(--text-sub);
+            margin: -6px 0 10px;
+        }
+
+        .day-title button {
+            background: none;
+            border: none;
+            color: var(--primary);
+            font-weight: bold;
+            cursor: pointer;
+            padding: 6px;
+        }
+
+        /* Avancement */
         .progress-header {
             display: flex;
             justify-content: space-between;
@@ -103,7 +176,7 @@
         }
 
         .progress-bar-bg {
-            background-color: #ebecf0;
+            background-color: var(--chip-bg);
             height: 12px;
             border-radius: 6px;
             overflow: hidden;
@@ -116,54 +189,53 @@
             transition: width 0.3s ease;
         }
 
-        /* Formulaire */
-        .add-card {
-            background: var(--card-bg);
-            padding: 15px;
-            border-radius: 10px;
-            margin-bottom: 15px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+        .stats-line {
+            display: flex;
+            justify-content: space-between;
+            flex-wrap: wrap;
+            gap: 4px 12px;
+            margin-top: 10px;
+            font-size: 0.82rem;
+            color: var(--text-sub);
         }
 
-        .add-card h2 {
-            font-size: 0.95rem;
-            margin-bottom: 10px;
-            color: var(--text-main);
+        /* Filtres */
+        .filters {
+            display: flex;
+            gap: 6px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            margin-bottom: 8px;
+            scrollbar-width: none;
         }
 
-        .form-grid {
-            display: grid;
-            grid-template-columns: 1fr 1fr;
-            gap: 8px;
-        }
-
-        .form-grid input, .form-grid select {
-            width: 100%;
-            padding: 10px;
+        .chip {
+            flex: 0 0 auto;
             border: 1px solid var(--border);
-            border-radius: 6px;
-            font-size: 0.9rem;
-            outline: none;
-        }
-
-        .form-grid input:focus, .form-grid select:focus {
-            border-color: var(--primary);
-        }
-
-        .btn-add {
-            grid-column: span 2;
-            background-color: var(--primary);
-            color: white;
-            border: none;
-            padding: 12px;
-            border-radius: 6px;
-            font-weight: bold;
-            font-size: 0.95rem;
+            background: var(--card-bg);
+            border-radius: 18px;
+            padding: 8px 14px;
+            font-size: 0.85rem;
+            font-weight: 600;
             cursor: pointer;
+            min-height: 38px;
         }
 
-        .btn-add:active {
-            background-color: var(--primary-dark);
+        .chip[aria-pressed="true"] {
+            background: var(--primary);
+            border-color: var(--primary);
+            color: white;
+        }
+
+        .search {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            font-size: 1rem;
+            margin-bottom: 12px;
+            background: var(--card-bg);
+            color: var(--text-main);
         }
 
         /* Cartes de livraisons */
@@ -172,54 +244,63 @@
             border-radius: 10px;
             padding: 12px;
             margin-bottom: 10px;
-            box-shadow: 0 1px 3px rgba(0,0,0,0.1);
+            box-shadow: var(--shadow);
             border-left: 6px solid var(--status-waiting);
             display: flex;
             flex-direction: column;
             gap: 8px;
         }
 
-        .delivery-card.EN_COURS {
-            border-left-color: var(--status-progress);
-        }
-
-        .delivery-card.DECHARGE {
-            border-left-color: var(--status-done);
-            background-color: #fafafa;
-        }
+        .delivery-card.EN_COURS { border-left-color: var(--status-progress); }
+        .delivery-card.DECHARGE { border-left-color: var(--status-done); background-color: var(--card-done); }
+        .delivery-card.late { border-left-color: var(--danger); }
 
         .card-header-line {
             display: flex;
             justify-content: space-between;
             align-items: center;
+            gap: 6px;
         }
 
+        .badges { display: flex; gap: 6px; flex-wrap: wrap; justify-content: flex-end; }
+
         .time-badge {
-            background: #ebecf0;
+            background: var(--chip-bg);
             padding: 3px 8px;
             border-radius: 4px;
             font-weight: bold;
             font-size: 0.85rem;
         }
 
-        .type-badge {
+        .type-badge, .dock-badge, .late-badge {
             font-size: 0.75rem;
             font-weight: bold;
             text-transform: uppercase;
             padding: 3px 6px;
             border-radius: 4px;
-            background: #e3fcef;
-            color: #006644;
         }
 
-        .supplier-name {
-            font-size: 1rem;
-            font-weight: 700;
-        }
+        .type-badge { background: #e3fcef; color: #006644; }
+        .dock-badge { background: #deebff; color: #0747a6; }
+        .late-badge { background: #ffebe6; color: #bf2600; }
+
+        .supplier-name { font-size: 1rem; font-weight: 700; overflow-wrap: anywhere; }
 
         .card-details {
             font-size: 0.85rem;
             color: var(--text-sub);
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px 14px;
+        }
+
+        .card-note {
+            font-size: 0.85rem;
+            background: var(--chip-bg);
+            border-radius: 6px;
+            padding: 6px 8px;
+            overflow-wrap: anywhere;
+            white-space: pre-wrap;
         }
 
         .action-buttons {
@@ -230,49 +311,162 @@
         }
 
         .btn-status {
-            padding: 10px 4px;
+            padding: 12px 4px;
             border: 1px solid var(--border);
-            background: #f4f5f7;
+            background: var(--bg-body);
             border-radius: 6px;
             font-weight: bold;
             font-size: 0.8rem;
             cursor: pointer;
             text-align: center;
-            color: var(--text-main);
         }
 
-        .btn-status.active-WAIT {
-            background-color: #ffab00;
-            color: white;
-            border-color: #ffab00;
-        }
-
-        .btn-status.active-PROGRESS {
-            background-color: #0052cc;
-            color: white;
-            border-color: #0052cc;
-        }
-
-        .btn-status.active-DONE {
-            background-color: #36b37e;
-            color: white;
-            border-color: #36b37e;
-        }
+        .btn-status.active-WAIT { background-color: #ffab00; color: #172b4d; border-color: #ffab00; }
+        .btn-status.active-PROGRESS { background-color: #0052cc; color: white; border-color: #0052cc; }
+        .btn-status.active-DONE { background-color: #36b37e; color: white; border-color: #36b37e; }
 
         .card-footer {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-top: 4px;
+            justify-content: flex-end;
+            gap: 6px;
         }
 
-        .btn-delete {
+        .btn-link {
             background: transparent;
             border: none;
-            color: #de350b;
-            font-size: 0.8rem;
+            font-size: 0.85rem;
             cursor: pointer;
-            padding: 4px;
+            padding: 8px 10px;
+            color: var(--text-sub);
+        }
+
+        .btn-link.danger { color: var(--danger); }
+
+        .empty {
+            text-align: center;
+            color: var(--text-sub);
+            padding: 28px 12px;
+        }
+
+        /* Outils */
+        .tools {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        .tools button {
+            padding: 12px 6px;
+            border: 1px solid var(--border);
+            background: var(--card-bg);
+            border-radius: 8px;
+            font-weight: 600;
+            font-size: 0.85rem;
+            cursor: pointer;
+        }
+
+        /* Bouton flottant */
+        .fab {
+            position: fixed;
+            right: 18px;
+            bottom: calc(18px + env(safe-area-inset-bottom));
+            z-index: 90;
+            width: 60px;
+            height: 60px;
+            border-radius: 50%;
+            border: none;
+            background: var(--primary);
+            color: white;
+            font-size: 2rem;
+            line-height: 1;
+            box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+            cursor: pointer;
+        }
+
+        .fab:active { background: var(--primary-dark); }
+
+        /* Formulaire (dialog) */
+        dialog {
+            border: none;
+            border-radius: 12px;
+            padding: 0;
+            width: min(94vw, 460px);
+            margin: auto;
+            background: var(--card-bg);
+            color: var(--text-main);
+            box-shadow: 0 10px 40px rgba(0,0,0,0.35);
+        }
+
+        dialog::backdrop { background: rgba(9,30,66,0.55); }
+
+        dialog form { padding: 16px; display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+        dialog h2 { grid-column: span 2; font-size: 1.05rem; }
+        dialog .full { grid-column: span 2; }
+
+        dialog label {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            color: var(--text-sub);
+        }
+
+        dialog input, dialog select, dialog textarea {
+            width: 100%;
+            padding: 11px 10px;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            font-size: 1rem;
+            background: var(--bg-body);
+            color: var(--text-main);
+        }
+
+        dialog textarea { resize: vertical; min-height: 60px; }
+        dialog input:focus, dialog select:focus, dialog textarea:focus { border-color: var(--primary); outline: none; }
+
+        .dialog-actions { grid-column: span 2; display: grid; grid-template-columns: 1fr 2fr; gap: 8px; margin-top: 4px; }
+
+        .btn-add, .btn-cancel {
+            padding: 13px;
+            border-radius: 6px;
+            font-weight: bold;
+            font-size: 0.95rem;
+            cursor: pointer;
+            border: none;
+        }
+
+        .btn-add { background-color: var(--primary); color: white; }
+        .btn-add:active { background-color: var(--primary-dark); }
+        .btn-cancel { background: var(--chip-bg); }
+
+        /* Toast */
+        #toast {
+            position: fixed;
+            left: 50%;
+            bottom: calc(92px + env(safe-area-inset-bottom));
+            transform: translateX(-50%);
+            background: #172b4d;
+            color: white;
+            padding: 10px 14px;
+            border-radius: 8px;
+            display: none;
+            align-items: center;
+            gap: 12px;
+            z-index: 200;
+            font-size: 0.9rem;
+            max-width: 92vw;
+            box-shadow: 0 4px 14px rgba(0,0,0,0.35);
+        }
+
+        #toast.show { display: flex; }
+        #toast button { background: none; border: none; color: #79e2f2; font-weight: bold; cursor: pointer; padding: 4px; }
+
+        @media print {
+            header, .day-nav, .filters, .search, .tools, .fab, #toast, .card-footer, .action-buttons, dialog { display: none !important; }
+            body { background: white; color: black; padding: 0; }
+            .delivery-card, .card { box-shadow: none; border: 1px solid #999; break-inside: avoid; }
         }
     </style>
 </head>
@@ -280,12 +474,20 @@
 
     <header>
         <h1>Suivi Quai LM</h1>
-        <div class="live-badge">EN DIRECT</div>
+        <div class="sync-badge" id="sync-badge" data-state="local" role="status">LOCAL</div>
     </header>
 
-    <div class="container">
-        <!-- Progression -->
-        <div class="progress-card">
+    <main class="container">
+        <!-- Navigation par jour -->
+        <div class="day-nav">
+            <button type="button" id="day-prev" aria-label="Jour précédent">‹</button>
+            <input type="date" id="view-date" aria-label="Choisir le jour">
+            <button type="button" id="day-next" aria-label="Jour suivant">›</button>
+        </div>
+        <div class="day-title"><span id="day-title"></span> <button type="button" id="day-today">Aujourd'hui</button></div>
+
+        <!-- Avancement -->
+        <div class="card">
             <div class="progress-header">
                 <span>Avancement Quai</span>
                 <span id="progress-text">0 / 0 (0%)</span>
@@ -293,123 +495,481 @@
             <div class="progress-bar-bg">
                 <div class="progress-bar-fill" id="progress-fill"></div>
             </div>
+            <div class="stats-line">
+                <span id="stat-pallets">📦 0 / 0 palettes</span>
+                <span id="stat-next"></span>
+            </div>
         </div>
 
-        <!-- Formulaire d'ajout -->
-        <div class="add-card">
-            <h2>+ Ajouter Réception / Navette</h2>
-            <form id="add-form" class="form-grid">
-                <input type="time" id="input-time" required>
+        <!-- Filtres + recherche -->
+        <div class="filters" id="filters" role="group" aria-label="Filtrer par statut"></div>
+        <input type="search" class="search" id="search" placeholder="Rechercher fournisseur, quai, note…" aria-label="Rechercher">
+
+        <!-- Liste des livraisons -->
+        <div id="delivery-list" aria-live="polite"></div>
+
+        <div class="tools">
+            <button type="button" id="btn-csv">⬇ CSV</button>
+            <button type="button" id="btn-share">📤 Partager</button>
+            <button type="button" id="btn-print">🖨 Imprimer</button>
+        </div>
+    </main>
+
+    <button type="button" class="fab" id="fab" aria-label="Ajouter une réception ou navette">+</button>
+
+    <!-- Ajout / modification -->
+    <dialog id="dlg" aria-labelledby="dlg-title">
+        <form id="add-form" method="dialog">
+            <h2 id="dlg-title">Ajouter Réception / Navette</h2>
+            <label>Heure <input type="time" id="input-time" required></label>
+            <label>Type
                 <select id="input-type">
                     <option value="Camion">Camion</option>
                     <option value="Navette">Navette</option>
                 </select>
-                <input type="text" id="input-supplier" placeholder="Fournisseur / Transporteur" required>
-                <input type="number" id="input-pallets" placeholder="Nbre Palettes" min="1">
-                <button type="submit" class="btn-add">Ajouter au planning</button>
-            </form>
-        </div>
+            </label>
+            <label class="full">Fournisseur / Transporteur
+                <input type="text" id="input-supplier" list="supplier-list" placeholder="Ex : Geodis / Schneider" autocomplete="off" required>
+            </label>
+            <datalist id="supplier-list"></datalist>
+            <label>Nbre palettes <input type="number" id="input-pallets" min="1" inputmode="numeric" placeholder="-"></label>
+            <label>Quai / porte <input type="text" id="input-dock" maxlength="10" placeholder="Ex : 3"></label>
+            <label class="full">Date <input type="date" id="input-date" required></label>
+            <label class="full">Note <textarea id="input-note" maxlength="300" placeholder="Ex : produits fragiles, RDV modifié…"></textarea></label>
+            <div class="dialog-actions">
+                <button type="button" class="btn-cancel" id="dlg-cancel">Annuler</button>
+                <button type="submit" class="btn-add" id="dlg-submit">Ajouter au planning</button>
+            </div>
+        </form>
+    </dialog>
 
-        <!-- Liste des livraisons -->
-        <div id="delivery-list">
-            <!-- Les cartes sont générées dynamiquement -->
-        </div>
-    </div>
+    <div id="toast" role="status" aria-live="polite"><span id="toast-msg"></span><button type="button" id="toast-action" hidden></button></div>
 
     <script>
-        // Données en local pour test immédiat
-        let deliveries = JSON.parse(localStorage.getItem('lm_quai_data')) || [
-            { id: '1', time: '07:00', type: 'Camion', supplier: 'Geodis / Schneider', pallets: 12, status: 'DECHARGE' },
-            { id: '2', time: '08:30', type: 'Navette', supplier: 'Navette Rueil', pallets: 6, status: 'EN_COURS' },
-            { id: '3', time: '10:00', type: 'Camion', supplier: 'Schenker / Bosch', pallets: 24, status: 'EN_ATTENTE' }
-        ];
+        // ============ CONFIG ============
+        // Pour la synchro en direct entre appareils : renseigner l'URL et la clé "anon/publishable"
+        // du projet Supabase (voir supabase.sql pour créer la table). Vide = mode local.
+        const CONFIG = {
+            SUPABASE_URL: '',
+            SUPABASE_KEY: ''
+        };
+        const SUPABASE_CDN = 'https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.45.4/dist/umd/supabase.min.js';
 
-        function saveData() {
-            localStorage.setItem('lm_quai_data', JSON.stringify(deliveries));
+        const STORE_KEY = 'lm_quai_v2';
+        const OLD_KEY = 'lm_quai_data';
+        const PENDING_KEY = 'lm_quai_pending';
+
+        const STATUS = {
+            EN_ATTENTE: { label: 'Attente', cls: 'WAIT', icon: '⏳' },
+            EN_COURS:   { label: 'En cours', cls: 'PROGRESS', icon: '🚚' },
+            DECHARGE:   { label: 'Déchargé', cls: 'DONE', icon: '✅' }
+        };
+
+        // ============ OUTILS ============
+        const $ = id => document.getElementById(id);
+        const pad = n => String(n).padStart(2, '0');
+        const ymd = d => `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+        const todayStr = () => ymd(new Date());
+        const parseYmd = s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+        const shiftDay = (s, n) => { const d = parseYmd(s); d.setDate(d.getDate() + n); return ymd(d); };
+        const nowHM = () => { const d = new Date(); return `${pad(d.getHours())}:${pad(d.getMinutes())}`; };
+        const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+        const fmtDay = s => parseYmd(s).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+        const hmToMin = hm => { const [h, m] = hm.split(':').map(Number); return h * 60 + m; };
+        const fmtDur = min => min < 60 ? `${min} min` : `${Math.floor(min / 60)} h ${pad(min % 60)}`;
+
+        function readJSON(key, fallback) {
+            try { const v = JSON.parse(localStorage.getItem(key)); return v ?? fallback; } catch (e) { return fallback; }
+        }
+        function writeJSON(key, value) {
+            try { localStorage.setItem(key, JSON.stringify(value)); } catch (e) { /* stockage plein / bloqué */ }
+        }
+
+        // ============ DONNÉES ============
+        function loadLocal() {
+            const v2 = readJSON(STORE_KEY, null);
+            if (Array.isArray(v2)) return v2;
+            // Migration de l'ancienne version (sans date)
+            const old = readJSON(OLD_KEY, null);
+            if (Array.isArray(old)) {
+                return old.map(d => {
+                    const p = parseInt(d.pallets, 10);
+                    return {
+                        id: String(d.id), date: todayStr(), time: d.time || '00:00', type: d.type || 'Camion',
+                        supplier: d.supplier || '', pallets: Number.isFinite(p) ? p : null, dock: '', note: '',
+                        status: STATUS[d.status] ? d.status : 'EN_ATTENTE', startedAt: null, doneAt: null, updatedAt: Date.now()
+                    };
+                });
+            }
+            return [];
+        }
+
+        let deliveries = loadLocal();
+        let pending = readJSON(PENDING_KEY, {});   // id -> 'upsert' | 'delete'
+        let viewDate = todayStr();
+        let filter = 'ALL';
+        let query = '';
+
+        const persist = () => writeJSON(STORE_KEY, deliveries);
+        const sortList = () => deliveries.sort((a, b) => a.date.localeCompare(b.date) || a.time.localeCompare(b.time) || a.id.localeCompare(b.id));
+
+        function saveItem(item) {
+            item.updatedAt = Date.now();
+            const i = deliveries.findIndex(d => d.id === item.id);
+            if (i >= 0) deliveries[i] = item; else deliveries.push(item);
+            sortList();
+            persist();
+            queue('upsert', item.id);
             render();
         }
 
-        function updateStatus(id, newStatus) {
+        function removeItem(id) {
             const item = deliveries.find(d => d.id === id);
-            if (item) {
-                item.status = newStatus;
-                saveData();
-            }
+            if (!item) return;
+            deliveries = deliveries.filter(d => d.id !== id);
+            persist();
+            queue('delete', id);
+            render();
+            toast('Réception supprimée', 'Annuler', () => saveItem(item));
         }
 
-        function deleteItem(id) {
-            if (confirm("Supprimer cette réception ?")) {
-                deliveries = deliveries.filter(d => d.id !== id);
-                saveData();
-            }
+        function setStatus(id, status) {
+            const it = deliveries.find(d => d.id === id);
+            if (!it || it.status === status) return;
+            const now = Date.now();
+            const n = { ...it, status };
+            if (status === 'EN_ATTENTE') { n.startedAt = null; n.doneAt = null; }
+            else if (status === 'EN_COURS') { n.startedAt = it.startedAt || now; n.doneAt = null; }
+            else { n.doneAt = now; }
+            saveItem(n);
         }
 
-        document.getElementById('add-form').addEventListener('submit', function(e) {
-            e.preventDefault();
-            const time = document.getElementById('input-time').value;
-            const type = document.getElementById('input-type').value;
-            const supplier = document.getElementById('input-supplier').value;
-            const pallets = document.getElementById('input-pallets').value || '-';
+        // ============ SYNCHRO SUPABASE (optionnelle) ============
+        const sync = { client: null, state: 'local' };
 
-            const newItem = {
-                id: Date.now().toString(),
-                time,
-                type,
-                supplier,
-                pallets,
-                status: 'EN_ATTENTE'
-            };
-
-            deliveries.push(newItem);
-            deliveries.sort((a,b) => a.time.localeCompare(b.time));
-            saveData();
-
-            document.getElementById('input-supplier').value = '';
-            document.getElementById('input-pallets').value = '';
+        const toRow = d => ({
+            id: d.id, date: d.date, time: d.time, type: d.type, supplier: d.supplier, pallets: d.pallets,
+            dock: d.dock || '', note: d.note || '', status: d.status,
+            started_at: d.startedAt, done_at: d.doneAt, updated_at: d.updatedAt
+        });
+        const fromRow = r => ({
+            id: String(r.id), date: r.date, time: r.time, type: r.type, supplier: r.supplier,
+            pallets: r.pallets ?? null, dock: r.dock || '', note: r.note || '', status: r.status,
+            startedAt: r.started_at ?? null, doneAt: r.done_at ?? null, updatedAt: Number(r.updated_at) || 0
         });
 
-        function render() {
-            const listContainer = document.getElementById('delivery-list');
-            listContainer.innerHTML = '';
+        function setSync(state) {
+            sync.state = state;
+            const b = $('sync-badge');
+            const n = Object.keys(pending).length;
+            b.dataset.state = state;
+            b.textContent = { live: 'EN DIRECT', local: 'LOCAL', connecting: 'CONNEXION…', offline: n ? `HORS LIGNE · ${n}` : 'HORS LIGNE' }[state];
+            b.title = { live: 'Synchronisé en temps réel', local: 'Données enregistrées sur cet appareil uniquement', connecting: 'Connexion au serveur…', offline: 'Modifications en attente de synchronisation' }[state];
+        }
 
-            let total = deliveries.length;
-            let doneCount = deliveries.filter(d => d.status === 'DECHARGE').length;
+        function queue(op, id) {
+            pending[id] = op;
+            writeJSON(PENDING_KEY, pending);
+            if (sync.client) flush(); else setSync(sync.state);
+        }
 
-            let percent = total > 0 ? Math.round((doneCount / total) * 100) : 0;
-            document.getElementById('progress-text').innerText = `${doneCount} / ${total} (${percent}%)`;
-            document.getElementById('progress-fill').style.width = percent + '%';
+        let flushing = false;
+        async function flush() {
+            if (!sync.client || flushing) return;
+            flushing = true;
+            try {
+                for (const id of Object.keys(pending)) {
+                    const op = pending[id];
+                    let res;
+                    if (op === 'delete') {
+                        res = await sync.client.from('deliveries').delete().eq('id', id);
+                    } else {
+                        const it = deliveries.find(d => d.id === id);
+                        res = it ? await sync.client.from('deliveries').upsert(toRow(it)) : { error: null };
+                    }
+                    if (res.error) throw res.error;
+                    if (pending[id] === op) delete pending[id];   // sinon modifié pendant l'envoi : on le renverra
+                    writeJSON(PENDING_KEY, pending);
+                }
+                if (sync.state === 'offline') setSync('live'); else setSync(sync.state);
+            } catch (e) {
+                setSync('offline');
+            } finally {
+                flushing = false;
+            }
+            if (Object.keys(pending).length && sync.state !== 'offline') flush();
+        }
 
-            if (deliveries.length === 0) {
-                listContainer.innerHTML = '<p style="text-align:center; color:#888; padding:20px;">Aucune réception pour le moment.</p>';
+        function mergeRemote(it) {
+            if (pending[it.id]) return;   // une modif locale non envoyée est prioritaire
+            const i = deliveries.findIndex(d => d.id === it.id);
+            if (i >= 0) { if (it.updatedAt <= deliveries[i].updatedAt) return; deliveries[i] = it; }
+            else deliveries.push(it);
+        }
+
+        async function pull() {
+            const since = ymd(new Date(Date.now() - 30 * 86400000));
+            const { data, error } = await sync.client.from('deliveries').select('*').gte('date', since);
+            if (error) throw error;
+            const remoteIds = new Set(data.map(r => String(r.id)));
+            data.forEach(r => mergeRemote(fromRow(r)));
+            // Envoie les éléments créés en mode local qui n'existent pas encore côté serveur
+            deliveries.forEach(d => { if (d.date >= since && !remoteIds.has(d.id) && !pending[d.id]) pending[d.id] = 'upsert'; });
+            writeJSON(PENDING_KEY, pending);
+            sortList(); persist(); render();
+        }
+
+        function onRemote(payload) {
+            if (payload.eventType === 'DELETE') {
+                const id = payload.old && String(payload.old.id);
+                if (id && !pending[id]) { deliveries = deliveries.filter(d => d.id !== id); persist(); render(); }
                 return;
             }
+            mergeRemote(fromRow(payload.new));
+            sortList(); persist(); render();
+        }
 
-            deliveries.forEach(item => {
-                const card = document.createElement('div');
-                card.className = `delivery-card ${item.status}`;
-
-                card.innerHTML = `
-                    <div class="card-header-line">
-                        <span class="time-badge">${item.time}</span>
-                        <span class="type-badge">${item.type}</span>
-                    </div>
-                    <div class="supplier-name">${item.supplier}</div>
-                    <div class="card-details">📦 ${item.pallets} palette(s)</div>
-                    <div class="action-buttons">
-                        <button class="btn-status ${item.status === 'EN_ATTENTE' ? 'active-WAIT' : ''}" onclick="updateStatus('${item.id}', 'EN_ATTENTE')">Attente</button>
-                        <button class="btn-status ${item.status === 'EN_COURS' ? 'active-PROGRESS' : ''}" onclick="updateStatus('${item.id}', 'EN_COURS')">En cours</button>
-                        <button class="btn-status ${item.status === 'DECHARGE' ? 'active-DONE' : ''}" onclick="updateStatus('${item.id}', 'DECHARGE')">Déchargé</button>
-                    </div>
-                    <div class="card-footer">
-                        <span></span>
-                        <button class="btn-delete" onclick="deleteItem('${item.id}')">Supprimer</button>
-                    </div>
-                `;
-                listContainer.appendChild(card);
+        function loadScript(src) {
+            return new Promise((resolve, reject) => {
+                const s = document.createElement('script');
+                s.src = src; s.onload = resolve; s.onerror = () => reject(new Error('script'));
+                document.head.appendChild(s);
             });
         }
 
+        async function initSync() {
+            if (!CONFIG.SUPABASE_URL || !CONFIG.SUPABASE_KEY) return setSync('local');
+            setSync('connecting');
+            try {
+                await loadScript(SUPABASE_CDN);
+                sync.client = window.supabase.createClient(CONFIG.SUPABASE_URL, CONFIG.SUPABASE_KEY);
+                sync.client.channel('lm-quai')
+                    .on('postgres_changes', { event: '*', schema: 'public', table: 'deliveries' }, onRemote)
+                    .subscribe(async status => {
+                        if (status === 'SUBSCRIBED') {
+                            try { await pull(); setSync('live'); await flush(); } catch (e) { setSync('offline'); }
+                        } else if (['CHANNEL_ERROR', 'TIMED_OUT', 'CLOSED'].includes(status)) {
+                            setSync('offline');
+                        }
+                    });
+            } catch (e) {
+                setSync('offline');
+            }
+        }
+
+        window.addEventListener('online', () => { if (sync.client) { pull().then(() => flush()).catch(() => setSync('offline')); } });
+
+        // ============ AFFICHAGE ============
+        function lateMinutes(it) {
+            if (it.status !== 'EN_ATTENTE' || it.date !== todayStr()) return 0;
+            const diff = hmToMin(nowHM()) - hmToMin(it.time);
+            return diff > 0 ? diff : 0;
+        }
+
+        function durationText(it) {
+            if (it.status === 'EN_COURS' && it.startedAt) return `⏱ en cours depuis ${fmtDur(Math.max(0, Math.round((Date.now() - it.startedAt) / 60000)))}`;
+            if (it.status === 'DECHARGE' && it.startedAt && it.doneAt) return `⏱ déchargé en ${fmtDur(Math.max(0, Math.round((it.doneAt - it.startedAt) / 60000)))}`;
+            return '';
+        }
+
+        function renderFilters(dayItems) {
+            const counts = { ALL: dayItems.length };
+            Object.keys(STATUS).forEach(k => counts[k] = dayItems.filter(d => d.status === k).length);
+            const defs = [['ALL', 'Tous'], ...Object.entries(STATUS).map(([k, s]) => [k, s.label])];
+            $('filters').innerHTML = defs.map(([k, label]) =>
+                `<button type="button" class="chip" data-filter="${k}" aria-pressed="${filter === k}">${label} (${counts[k]})</button>`).join('');
+        }
+
+        function render() {
+            $('view-date').value = viewDate;
+            const isToday = viewDate === todayStr();
+            $('day-title').textContent = fmtDay(viewDate).replace(/^./, c => c.toUpperCase());
+            $('day-today').hidden = isToday;
+
+            const dayItems = deliveries.filter(d => d.date === viewDate);
+            const total = dayItems.length;
+            const done = dayItems.filter(d => d.status === 'DECHARGE');
+            const percent = total ? Math.round(done.length / total * 100) : 0;
+            $('progress-text').textContent = `${done.length} / ${total} (${percent}%)`;
+            $('progress-fill').style.width = percent + '%';
+
+            const palTotal = dayItems.reduce((s, d) => s + (d.pallets || 0), 0);
+            const palDone = done.reduce((s, d) => s + (d.pallets || 0), 0);
+            $('stat-pallets').textContent = `📦 ${palDone} / ${palTotal} palettes`;
+            const next = dayItems.find(d => d.status === 'EN_ATTENTE' && (!isToday || d.time >= nowHM()));
+            $('stat-next').textContent = next ? `Prochain : ${next.time} ${next.supplier}` : '';
+
+            renderFilters(dayItems);
+
+            const q = query.trim().toLowerCase();
+            const shown = dayItems.filter(d =>
+                (filter === 'ALL' || d.status === filter) &&
+                (!q || `${d.supplier} ${d.dock} ${d.note} ${d.type}`.toLowerCase().includes(q)));
+
+            const list = $('delivery-list');
+            if (!shown.length) {
+                list.innerHTML = `<p class="empty">${total ? 'Aucun résultat pour ce filtre.' : 'Aucune réception ce jour-là.<br>Appuyez sur + pour en ajouter.'}</p>`;
+            } else {
+                list.innerHTML = shown.map(cardHTML).join('');
+            }
+
+            $('supplier-list').innerHTML = [...new Set(deliveries.map(d => d.supplier))].map(s => `<option value="${esc(s)}">`).join('');
+        }
+
+        function cardHTML(it) {
+            const late = lateMinutes(it);
+            const dur = durationText(it);
+            const pallets = it.pallets ? `${it.pallets} palette${it.pallets > 1 ? 's' : ''}` : 'palettes : -';
+            return `
+            <article class="delivery-card ${esc(it.status)}${late ? ' late' : ''}" data-id="${esc(it.id)}">
+                <div class="card-header-line">
+                    <span class="time-badge">${esc(it.time)}</span>
+                    <span class="badges">
+                        ${late ? `<span class="late-badge">⚠ Retard ${fmtDur(late)}</span>` : ''}
+                        ${it.dock ? `<span class="dock-badge">Quai ${esc(it.dock)}</span>` : ''}
+                        <span class="type-badge">${esc(it.type)}</span>
+                    </span>
+                </div>
+                <div class="supplier-name">${esc(it.supplier)}</div>
+                <div class="card-details"><span>📦 ${pallets}</span>${dur ? `<span>${dur}</span>` : ''}</div>
+                ${it.note ? `<div class="card-note">${esc(it.note)}</div>` : ''}
+                <div class="action-buttons">
+                    ${Object.entries(STATUS).map(([k, s]) =>
+                        `<button type="button" class="btn-status ${it.status === k ? 'active-' + s.cls : ''}" data-action="status" data-status="${k}" aria-pressed="${it.status === k}">${s.label}</button>`).join('')}
+                </div>
+                <div class="card-footer">
+                    <button type="button" class="btn-link" data-action="edit">✏️ Modifier</button>
+                    <button type="button" class="btn-link danger" data-action="delete">Supprimer</button>
+                </div>
+            </article>`;
+        }
+
+        // ============ FORMULAIRE ============
+        const dlg = $('dlg');
+        let editingId = null;
+
+        function openForm(item) {
+            editingId = item ? item.id : null;
+            $('dlg-title').textContent = item ? 'Modifier la réception' : 'Ajouter Réception / Navette';
+            $('dlg-submit').textContent = item ? 'Enregistrer' : 'Ajouter au planning';
+            $('input-time').value = item ? item.time : nowHM();
+            $('input-type').value = item ? item.type : 'Camion';
+            $('input-supplier').value = item ? item.supplier : '';
+            $('input-pallets').value = item && item.pallets ? item.pallets : '';
+            $('input-dock').value = item ? item.dock : '';
+            $('input-date').value = item ? item.date : viewDate;
+            $('input-note').value = item ? item.note : '';
+            dlg.showModal();
+            $('input-supplier').focus();
+        }
+
+        $('add-form').addEventListener('submit', e => {
+            e.preventDefault();
+            const supplier = $('input-supplier').value.trim();
+            if (!supplier) return;
+            const p = parseInt($('input-pallets').value, 10);
+            const base = editingId ? deliveries.find(d => d.id === editingId) : null;
+            const item = {
+                ...(base || { id: Date.now().toString(36) + Math.random().toString(36).slice(2, 6), status: 'EN_ATTENTE', startedAt: null, doneAt: null }),
+                date: $('input-date').value, time: $('input-time').value, type: $('input-type').value,
+                supplier, pallets: p > 0 ? p : null, dock: $('input-dock').value.trim(), note: $('input-note').value.trim()
+            };
+            dlg.close();
+            viewDate = item.date;
+            saveItem(item);
+        });
+
+        $('fab').addEventListener('click', () => openForm(null));
+        $('dlg-cancel').addEventListener('click', () => dlg.close());
+        dlg.addEventListener('click', e => { if (e.target === dlg) dlg.close(); });
+
+        // ============ ÉVÉNEMENTS ============
+        $('delivery-list').addEventListener('click', e => {
+            const btn = e.target.closest('button[data-action]');
+            if (!btn) return;
+            const id = btn.closest('[data-id]').dataset.id;
+            const action = btn.dataset.action;
+            if (action === 'status') setStatus(id, btn.dataset.status);
+            else if (action === 'edit') openForm(deliveries.find(d => d.id === id));
+            else if (action === 'delete') removeItem(id);
+        });
+
+        $('filters').addEventListener('click', e => {
+            const chip = e.target.closest('[data-filter]');
+            if (chip) { filter = chip.dataset.filter; render(); }
+        });
+
+        $('search').addEventListener('input', e => { query = e.target.value; render(); });
+        $('day-prev').addEventListener('click', () => { viewDate = shiftDay(viewDate, -1); render(); });
+        $('day-next').addEventListener('click', () => { viewDate = shiftDay(viewDate, 1); render(); });
+        $('day-today').addEventListener('click', () => { viewDate = todayStr(); render(); });
+        $('view-date').addEventListener('change', e => { if (e.target.value) { viewDate = e.target.value; render(); } });
+
+        // ============ TOAST ============
+        let toastTimer;
+        function toast(msg, actionLabel, onAction) {
+            $('toast-msg').textContent = msg;
+            const a = $('toast-action');
+            a.hidden = !actionLabel;
+            a.textContent = actionLabel || '';
+            a.onclick = () => { $('toast').classList.remove('show'); onAction && onAction(); };
+            $('toast').classList.add('show');
+            clearTimeout(toastTimer);
+            toastTimer = setTimeout(() => $('toast').classList.remove('show'), 6000);
+        }
+
+        // ============ EXPORT / PARTAGE ============
+        function dayList() { return deliveries.filter(d => d.date === viewDate); }
+
+        function csvCell(v) {
+            let s = String(v ?? '');
+            if (/^[=+\-@\t\r]/.test(s)) s = "'" + s;   // évite l'injection de formules Excel
+            return `"${s.replace(/"/g, '""')}"`;
+        }
+
+        $('btn-csv').addEventListener('click', () => {
+            const list = dayList();
+            if (!list.length) return toast('Rien à exporter ce jour-là');
+            const hm = t => t ? new Date(t).toLocaleTimeString('fr-FR', { hour: '2-digit', minute: '2-digit' }) : '';
+            const rows = [['Date', 'Heure', 'Type', 'Fournisseur', 'Palettes', 'Quai', 'Statut', 'Début', 'Fin', 'Durée (min)', 'Note']];
+            list.forEach(d => rows.push([d.date, d.time, d.type, d.supplier, d.pallets ?? '', d.dock, STATUS[d.status].label, hm(d.startedAt), hm(d.doneAt),
+                d.startedAt && d.doneAt ? Math.round((d.doneAt - d.startedAt) / 60000) : '', d.note]));
+            const csv = '﻿' + rows.map(r => r.map(csvCell).join(';')).join('\r\n');
+            const a = document.createElement('a');
+            a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+            a.download = `quai-${viewDate}.csv`;
+            document.body.appendChild(a); a.click(); a.remove();
+            setTimeout(() => URL.revokeObjectURL(a.href), 1000);
+        });
+
+        $('btn-share').addEventListener('click', async () => {
+            const list = dayList();
+            if (!list.length) return toast('Rien à partager ce jour-là');
+            const done = list.filter(d => d.status === 'DECHARGE').length;
+            const pal = list.reduce((s, d) => s + (d.pallets || 0), 0);
+            const palDone = list.filter(d => d.status === 'DECHARGE').reduce((s, d) => s + (d.pallets || 0), 0);
+            const lines = list.map(d => `${STATUS[d.status].icon} ${d.time} ${d.type} · ${d.supplier}${d.pallets ? ` · ${d.pallets} pal.` : ''}${d.dock ? ` · Quai ${d.dock}` : ''}${d.note ? ` (${d.note})` : ''}`);
+            const text = `📋 Quai LM — ${fmtDay(viewDate)}\nAvancement : ${done}/${list.length} (${Math.round(done / list.length * 100)}%) · 📦 ${palDone}/${pal} pal.\n\n${lines.join('\n')}`;
+            try {
+                if (navigator.share) { await navigator.share({ text }); return; }
+            } catch (e) { if (e.name === 'AbortError') return; }
+            window.open('https://wa.me/?text=' + encodeURIComponent(text), '_blank', 'noopener');
+        });
+
+        $('btn-print').addEventListener('click', () => window.print());
+
+        // ============ DÉMARRAGE ============
+        setSync('local');
         render();
+        initSync();
+
+        // Rafraîchit retards / durées chaque 30 s
+        setInterval(() => { render(); if (sync.client && Object.keys(pending).length) flush(); }, 30000);
+        document.addEventListener('visibilitychange', () => { if (!document.hidden) render(); });
+
+        if ('serviceWorker' in navigator) {
+            window.addEventListener('load', () => navigator.serviceWorker.register('sw.js').catch(() => {}));
+        }
     </script>
 </body>
 </html>
